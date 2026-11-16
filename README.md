@@ -2,7 +2,7 @@
 
 **Energy analytics for building operators.** GridWise turns raw smart-meter readings into live dashboards, flags abnormal consumption against a baseline, breaks costs down by tariff, and lets operators test how a schedule change would affect energy use and cost.
 
-> **Status:** early development, following a 12-week roadmap (see below). The project uses only synthetic meter data and does not control any real equipment.
+> **Status:** early development, following a 7-week roadmap (see below). The project uses only synthetic meter data and does not control any real equipment.
 
 ## The problem
 
@@ -95,13 +95,15 @@ gridwise/
 
 ## Roadmap
 
-| Weeks | Focus |
-|---|---|
-| 1–2 | Vue/.NET stack, sample meter generator, identity, buildings and meters |
-| 3–5 | Time-series schema, ingestion, deduplication, live dashboard with SignalR |
-| 6–8 | Tariff engine and cost reports, baselines, anomaly rules, alerts |
-| 9–10 | Versioned energy scenarios; AI explanations with evidence checks |
-| 11–12 | Load, security and recovery testing; deployment and demo |
+| Week | Focus | Status |
+|---|---|---|
+| Week 1 | **Foundation** — Scaffold Vue and ASP.NET Core apps with Compose stack, add sample meter data generator with tests | Planned |
+| Week 2 | **Meters & ingestion** — Add identity and organizations, add buildings and meters, add TimescaleDB hypertable schema, add telemetry ingestion endpoint, add building and meter screens | Planned |
+| Week 3 | **Data quality & live dashboard** — Deduplicate readings, flag gaps and spikes, add SignalR hub, add live dashboard | Planned |
+| Week 4 | **Tariffs & costs** — Add time-of-use tariff model, calculate energy costs with tests, add cost report | Planned |
+| Week 5 | **Anomalies & alerts** — Compute baselines in the worker, add deterministic anomaly rules, raise alerts from anomalies, add acknowledgment workflow, add alerts inbox | Planned |
+| Week 6 | **Scenarios & AI** — Add versioned energy scenarios, add scenario comparison, add explanation adapter with mock model and evidence checks | Planned |
+| Week 7 | **Release** — Add load and security tests, add build and test workflow, add setup guide, demo script and runbooks | Planned |
 
 ## Getting started
 
