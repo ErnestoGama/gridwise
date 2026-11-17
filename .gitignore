@@ -1,0 +1,29 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# .NET
+bin/
+obj/
+*.user
+TestResults/
+
+# Node / Vite
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Generated fixture sets
+.fixtures/
+
+# Editors and OS
+.idea/
+.vs/
+.vscode/
+.DS_Store

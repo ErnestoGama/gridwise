@@ -1,0 +1,9 @@
+[project]
+name = "gridwise-fixtures"
+version = "0.1.0"
+description = "Deterministic synthetic smart-meter data for GridWise development, tests and demos"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+gridwise-fixtures = "gridwise_fixtures.__main__:main"
