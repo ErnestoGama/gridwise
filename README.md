@@ -105,6 +105,12 @@ gridwise/
 | Week 6 | **Scenarios & AI** — Add versioned energy scenarios, add scenario comparison, add explanation adapter with mock model and evidence checks | Planned |
 | Week 7 | **Release** — Add load and security tests, add build and test workflow, add setup guide, demo script and runbooks | Planned |
 
+## Documentation
+
+- [Architecture decisions](docs/adr/)
+- [Week 1 acceptance cases](docs/acceptance/week-01-foundation-and-meter-fixtures.md)
+- [Progress notes](docs/progress/week-01.md)
+
 ## Getting started
 
 Setup instructions will be added once the first services are in place.
