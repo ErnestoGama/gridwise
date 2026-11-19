@@ -1,4 +1,5 @@
 using GridWise.Api.Identity;
+using GridWise.Api.Sites;
 using Microsoft.EntityFrameworkCore;
 
 namespace GridWise.Api.Data;
@@ -9,6 +10,8 @@ public sealed class GridWiseDbContext(DbContextOptions<GridWiseDbContext> option
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<Membership> Memberships => Set<Membership>();
+    public DbSet<Building> Buildings => Set<Building>();
+    public DbSet<Meter> Meters => Set<Meter>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(GridWiseDbContext).Assembly);

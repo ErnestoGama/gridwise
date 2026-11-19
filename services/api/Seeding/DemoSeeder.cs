@@ -1,12 +1,14 @@
 using GridWise.Api.Data;
 using GridWise.Api.Identity;
+using GridWise.Api.Sites;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace GridWise.Api.Seeding;
 
 /// <summary>
-/// Creates two fictional organizations and one demo user per role. Running it
+/// Creates two fictional organizations, one demo user per role and a few
+/// buildings with meters. Running it
 /// again changes nothing that already exists. Emails use the reserved
 /// <c>.test</c> domain so they can never reach a real mailbox.
 /// </summary>
@@ -29,6 +31,14 @@ public sealed class DemoSeeder(GridWiseDbContext db, IPasswordHasher<AppUser> ha
         ("manager@gridwise.test", "Maya Manager", [("harbor-demo", OrganizationRole.Manager)]),
         ("admin@gridwise.test", "Ada Admin",
             [("harbor-demo", OrganizationRole.Admin), ("lantern-estates", OrganizationRole.Admin)]),
+    ];
+
+    /// <summary>Demo buildings with one main and one HVAC meter each, in different time zones.</summary>
+    public static readonly (string Slug, string Name, string TimeZone, int FloorAreaM2, (string Serial, string Kind)[] Meters)[] Buildings =
+    [
+        ("harbor-demo", "Harbor Hall", "Europe/Madrid", 6400, [("GW-HH-MAIN-01", "main"), ("GW-HH-HVAC-01", "hvac")]),
+        ("harbor-demo", "Quarry Works", "America/Bogota", 3800, [("GW-QW-MAIN-01", "main"), ("GW-QW-HVAC-01", "hvac")]),
+        ("lantern-estates", "Lantern House", "Europe/London", 2900, [("GW-LH-MAIN-01", "main"), ("GW-LH-HVAC-01", "hvac")]),
     ];
 
     public async Task<int> SeedAsync(string password, CancellationToken ct)
@@ -72,6 +82,37 @@ public sealed class DemoSeeder(GridWiseDbContext db, IPasswordHasher<AppUser> ha
                     continue;
                 }
                 db.Memberships.Add(new Membership { OrganizationId = organization.Id, UserId = user.Id, Role = role });
+                created++;
+            }
+        }
+
+        foreach (var (slug, name, timeZone, floorArea, meters) in Buildings)
+        {
+            var organization = organizations[slug];
+            var building = await db.Buildings.Include(b => b.Meters)
+                .SingleOrDefaultAsync(b => b.OrganizationId == organization.Id && b.Name == name, ct);
+            if (building is null)
+            {
+                building = new Building { OrganizationId = organization.Id, Name = name, TimeZone = timeZone, FloorAreaM2 = floorArea };
+                db.Buildings.Add(building);
+                created++;
+            }
+
+            foreach (var (serial, kind) in meters)
+            {
+                if (building.Meters.Any(m => m.Serial == serial)
+                    || await db.Meters.AnyAsync(m => m.OrganizationId == organization.Id && m.Serial == serial, ct))
+                {
+                    continue;
+                }
+                db.Meters.Add(new Meter
+                {
+                    OrganizationId = organization.Id,
+                    BuildingId = building.Id,
+                    Serial = serial,
+                    Kind = kind,
+                    IntervalMinutes = SiteEndpoints.DefaultIntervalMinutes,
+                });
                 created++;
             }
         }

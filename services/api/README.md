@@ -20,8 +20,9 @@ dotnet run                 # start the API on http://localhost:5080
 dotnet test ../../tests/GridWise.Api.Tests
 ```
 
-`seed-demo` is idempotent. It creates two fictional organizations and one user
-per role, all with the password from `GRIDWISE_DEMO_PASSWORD`:
+`seed-demo` is idempotent. It creates two fictional organizations, one user
+per role (all with the password from `GRIDWISE_DEMO_PASSWORD`) and three
+buildings with a `main` and an `hvac` meter each:
 
 | User | `harbor-demo` | `lantern-estates` |
 |---|---|---|
@@ -29,6 +30,12 @@ per role, all with the password from `GRIDWISE_DEMO_PASSWORD`:
 | `analyst@gridwise.test` | analyst | — |
 | `manager@gridwise.test` | manager | — |
 | `admin@gridwise.test` | admin | admin |
+
+| Organization | Building | Time zone | Meters |
+|---|---|---|---|
+| `harbor-demo` | Harbor Hall | `Europe/Madrid` | `GW-HH-MAIN-01`, `GW-HH-HVAC-01` |
+| `harbor-demo` | Quarry Works | `America/Bogota` | `GW-QW-MAIN-01`, `GW-QW-HVAC-01` |
+| `lantern-estates` | Lantern House | `Europe/London` | `GW-LH-MAIN-01`, `GW-LH-HVAC-01` |
 
 ## Identity and organizations
 
@@ -54,6 +61,36 @@ Security notes:
   redirect.
 - Sign-in failures are logged without the email address.
 
+## Buildings and meters
+
+Every member can read the registry; only admins can add buildings and meters.
+Routes are relative to `/v1/organizations/{organizationId}`; a caller who is
+not a member gets `404` for all of them, a member whose role is too low `403`.
+
+| Method | Route | Result |
+|---|---|---|
+| `GET` | `/buildings?limit=&cursor=` | Page of buildings in name order, each with `meterCount` |
+| `POST` | `/buildings` | `{ name, timeZone, floorAreaM2? }` → `201`; `409 building_name_taken`; `422` |
+| `GET` | `/buildings/{id}` | Building with its meters, or `404` |
+| `GET` | `/meters?buildingId=&limit=&cursor=` | Page of meters in serial order |
+| `POST` | `/meters` | `{ buildingId, serial, kind, intervalMinutes? }` → `201`; `409 meter_serial_taken`; `422` |
+| `GET` | `/meters/{id}` | One meter, or `404` |
+
+Rules (each one is also a database constraint):
+
+- Building names are unique within an organization; `timeZone` must be an
+  IANA ID such as `Europe/Madrid` (Windows IDs are rejected); floor area is
+  optional, 1 to 2,000,000 m².
+- Serials are trimmed and uppercased, 3–40 letters, digits or hyphens, and
+  unique within an organization (two organizations may reuse a serial).
+- `kind` is one of `main`, `hvac`, `lighting`, `plug`, `process`;
+  `intervalMinutes` one of 5, 10, 15, 30, 60 (default 15).
+- A meter's `buildingId` must belong to the same organization. The API answers
+  `422` with `fields.buildingId` otherwise, and the composite foreign key
+  `(organization_id, building_id)` blocks it in the database too.
+- Pages hold up to `limit` items (1–100, default 50). Pass the opaque
+  `nextCursor` back as `cursor`; it is `null` on the last page.
+
 ## Errors
 
 Every error uses one envelope; `requestId` matches the `X-Request-ID` response
@@ -70,3 +107,10 @@ lowercase slug), `users` (unique normalized email, lockout columns) and
 `memberships` (one role per user and organization, cascades on delete). Its
 `Down` drops the three tables and is only safe before later tables reference
 organizations.
+
+Migration `AddBuildingsAndMeters` creates `buildings` (unique name per
+organization, alternate key `(organization_id, id)`) and `meters` (unique
+serial per organization, kind and interval checks, composite foreign key to
+the building). Both use `RESTRICT` on delete so removing an organization or
+building never silently removes meter history. `Down` drops both tables and is
+only safe before telemetry references meters.

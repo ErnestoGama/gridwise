@@ -28,6 +28,9 @@ public static class ApiErrors
     public static IResult Forbidden(HttpContext context) =>
         Result(context, StatusCodes.Status403Forbidden, "forbidden", "Your role does not allow this action.");
 
+    public static IResult Conflict(HttpContext context, string code, string message) =>
+        Result(context, StatusCodes.Status409Conflict, code, message);
+
     public static IResult Validation(HttpContext context, IReadOnlyDictionary<string, string[]> fields) =>
         Result(context, StatusCodes.Status422UnprocessableEntity, "validation_failed", "One or more fields are invalid.", fields);
 

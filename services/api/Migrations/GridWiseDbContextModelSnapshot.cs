@@ -162,6 +162,116 @@ namespace GridWise.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GridWise.Api.Sites.Building", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int?>("FloorAreaM2")
+                        .HasColumnType("integer")
+                        .HasColumnName("floor_area_m2");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("TimeZone")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("time_zone");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_buildings");
+
+                    b.HasAlternateKey("OrganizationId", "Id")
+                        .HasName("ak_buildings_organization_id_id");
+
+                    b.HasIndex("OrganizationId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_buildings_organization_name");
+
+                    b.ToTable("buildings", t =>
+                        {
+                            t.HasCheckConstraint("ck_buildings_floor_area_m2", "floor_area_m2 IS NULL OR (floor_area_m2 > 0 AND floor_area_m2 <= 2000000)");
+
+                            t.HasCheckConstraint("ck_buildings_name", "length(btrim(name)) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GridWise.Api.Sites.Meter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("BuildingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("building_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("IntervalMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("interval_minutes");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Serial")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("serial");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_meters");
+
+                    b.HasIndex("OrganizationId", "BuildingId")
+                        .HasDatabaseName("ix_meters_organization_building");
+
+                    b.HasIndex("OrganizationId", "Serial")
+                        .IsUnique()
+                        .HasDatabaseName("ux_meters_organization_serial");
+
+                    b.ToTable("meters", t =>
+                        {
+                            t.HasCheckConstraint("ck_meters_interval_minutes", "interval_minutes IN (5, 10, 15, 30, 60)");
+
+                            t.HasCheckConstraint("ck_meters_kind", "kind IN ('main', 'hvac', 'lighting', 'plug', 'process')");
+
+                            t.HasCheckConstraint("ck_meters_serial", "serial ~ '^[A-Z0-9][A-Z0-9-]{2,39}$'");
+                        });
+                });
+
             modelBuilder.Entity("GridWise.Api.Identity.Membership", b =>
                 {
                     b.HasOne("GridWise.Api.Identity.Organization", "Organization")
@@ -183,6 +293,31 @@ namespace GridWise.Api.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("GridWise.Api.Sites.Building", b =>
+                {
+                    b.HasOne("GridWise.Api.Identity.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_buildings_organizations_organization_id");
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("GridWise.Api.Sites.Meter", b =>
+                {
+                    b.HasOne("GridWise.Api.Sites.Building", "Building")
+                        .WithMany("Meters")
+                        .HasForeignKey("OrganizationId", "BuildingId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_meters_buildings_organization_id_building_id");
+
+                    b.Navigation("Building");
+                });
+
             modelBuilder.Entity("GridWise.Api.Identity.AppUser", b =>
                 {
                     b.Navigation("Memberships");
@@ -191,6 +326,11 @@ namespace GridWise.Api.Migrations
             modelBuilder.Entity("GridWise.Api.Identity.Organization", b =>
                 {
                     b.Navigation("Memberships");
+                });
+
+            modelBuilder.Entity("GridWise.Api.Sites.Building", b =>
+                {
+                    b.Navigation("Meters");
                 });
 #pragma warning restore 612, 618
         }

@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using GridWise.Api.Data;
+using GridWise.Api.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace GridWise.Api.Identity;
@@ -44,6 +45,16 @@ public sealed class OrganizationAccess(GridWiseDbContext db)
             ? (AccessDecision.Granted, new OrganizationContext(organizationId, userId, role.Value))
             : (AccessDecision.RoleTooLow, null);
     }
+}
+
+public static class AccessDecisions
+{
+    /// <summary>The error response for a refused decision: 404 for non-members, 403 for a role that is too low.</summary>
+    public static IResult ToError(this AccessDecision decision, HttpContext http) => decision switch
+    {
+        AccessDecision.RoleTooLow => ApiErrors.Forbidden(http),
+        _ => ApiErrors.NotFound(http, "Organization not found."),
+    };
 }
 
 public static class ClaimsPrincipalExtensions
