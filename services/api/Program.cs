@@ -4,6 +4,7 @@ using GridWise.Api.Http;
 using GridWise.Api.Identity;
 using GridWise.Api.Seeding;
 using GridWise.Api.Sites;
+using GridWise.Api.Telemetry;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
@@ -76,6 +77,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 });
 app.MapIdentityEndpoints();
 app.MapSiteEndpoints();
+app.MapTelemetryEndpoints();
 
 await app.RunAsync();
 return 0;

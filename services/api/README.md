@@ -91,6 +91,42 @@ Rules (each one is also a database constraint):
 - Pages hold up to `limit` items (1–100, default 50). Pass the opaque
   `nextCursor` back as `cursor`; it is `null` on the last page.
 
+## Telemetry ingestion
+
+`POST /v1/organizations/{organizationId}/telemetry/batches` (admin only) stores
+interval readings for any meters of the organization in the route:
+
+```json
+{ "readings": [ { "meterId": "…", "sequence": 4812, "readingStart": "2026-03-29T00:15:00Z", "energyKwh": 12.375 } ] }
+```
+
+| Result | When |
+|---|---|
+| `200` `{ received, inserted, duplicates, conflicts[] }` | The batch was valid; new readings were stored |
+| `422 validation_failed` | Any reading is invalid; `fields` uses keys like `readings[3].energyKwh` (at most 50) and nothing is stored |
+| `404` / `403` / `401` | Not a member / role below admin / not signed in |
+
+Rules:
+
+- 1 to 1,000 readings per batch; the body is limited to 512 KB.
+- `meterId` must be a meter of the route organization; another tenant's meter
+  is reported as `Meter not found.`
+- `readingStart` may carry any offset and is stored in UTC. It must fall on the
+  meter's interval boundary, and the interval must have ended (5 minutes of
+  clock skew allowed).
+- `energyKwh` is 0 to 999,999,999.999 with at most three decimals; `sequence`
+  is an integer `>= 0`.
+- Readings are immutable and deduplicated by meter and sequence. Resending an
+  identical reading counts as a duplicate, so retrying a batch is safe. A
+  reading that reuses a stored sequence with another start or energy
+  (`sequence_reused`), or takes a stored interval with another sequence
+  (`interval_taken`), is listed in `conflicts` with its index and not stored;
+  the rest of the batch still is. Within one batch the first reading wins.
+- Concurrent batches for the same meter are serialized with a per-meter
+  advisory lock inside the insert transaction, because a hypertable cannot
+  have a unique `(meter_id, sequence)` constraint without the time column.
+- Only counts are logged, never reading values.
+
 ## Errors
 
 Every error uses one envelope; `requestId` matches the `X-Request-ID` response
