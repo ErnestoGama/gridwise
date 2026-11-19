@@ -114,3 +114,20 @@ serial per organization, kind and interval checks, composite foreign key to
 the building). Both use `RESTRICT` on delete so removing an organization or
 building never silently removes meter history. `Down` drops both tables and is
 only safe before telemetry references meters.
+
+Migration `AddMeterReadingsHypertable` creates `meter_readings` and turns it
+into a TimescaleDB hypertable on `reading_start` (7-day chunks):
+
+| Column | Rule |
+|---|---|
+| `meter_id`, `reading_start` | primary key: one reading per meter and interval; `reading_start` is the UTC interval start, whole minutes |
+| `organization_id` | composite foreign key `(organization_id, meter_id)` to `meters`, so a reading cannot belong to another tenant's meter (`RESTRICT` on delete) |
+| `sequence` | interval counter from the meter, `>= 0`, indexed with `meter_id` to spot resent readings |
+| `energy_kwh` | `numeric(12,3)`, `>= 0` |
+| `received_at` | set by the database on insert |
+
+Readings are immutable: a trigger rejects every `UPDATE`. A missing interval has
+no row and is treated as unknown, never as zero. The migration needs the
+`timescaledb` extension (created by the Compose init script). Its `Down` drops
+the table with all stored readings, so dump `meter_readings` before rolling back
+a database that holds real data.

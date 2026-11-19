@@ -49,6 +49,8 @@ internal sealed class MeterConfiguration : IEntityTypeConfiguration<Meter>
             t.HasCheckConstraint("ck_meters_serial", "serial ~ '^[A-Z0-9][A-Z0-9-]{2,39}$'");
         });
         b.HasKey(x => x.Id).HasName("pk_meters");
+        // Target of the readings' composite foreign key: a reading can only point at a meter of its own organization.
+        b.HasAlternateKey(x => new { x.OrganizationId, x.Id }).HasName("ak_meters_organization_id_id");
         b.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
         b.Property(x => x.OrganizationId).HasColumnName("organization_id");
         b.Property(x => x.BuildingId).HasColumnName("building_id");

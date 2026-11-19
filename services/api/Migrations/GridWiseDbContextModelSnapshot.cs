@@ -255,6 +255,9 @@ namespace GridWise.Api.Migrations
                     b.HasKey("Id")
                         .HasName("pk_meters");
 
+                    b.HasAlternateKey("OrganizationId", "Id")
+                        .HasName("ak_meters_organization_id_id");
+
                     b.HasIndex("OrganizationId", "BuildingId")
                         .HasDatabaseName("ix_meters_organization_building");
 
@@ -269,6 +272,54 @@ namespace GridWise.Api.Migrations
                             t.HasCheckConstraint("ck_meters_kind", "kind IN ('main', 'hvac', 'lighting', 'plug', 'process')");
 
                             t.HasCheckConstraint("ck_meters_serial", "serial ~ '^[A-Z0-9][A-Z0-9-]{2,39}$'");
+                        });
+                });
+
+            modelBuilder.Entity("GridWise.Api.Telemetry.MeterReading", b =>
+                {
+                    b.Property<Guid>("MeterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("meter_id");
+
+                    b.Property<DateTimeOffset>("ReadingStart")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reading_start");
+
+                    b.Property<decimal>("EnergyKwh")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)")
+                        .HasColumnName("energy_kwh");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sequence");
+
+                    b.HasKey("MeterId", "ReadingStart")
+                        .HasName("pk_meter_readings");
+
+                    b.HasIndex("MeterId", "Sequence")
+                        .HasDatabaseName("ix_meter_readings_meter_sequence");
+
+                    b.HasIndex("OrganizationId", "ReadingStart")
+                        .HasDatabaseName("ix_meter_readings_organization_reading_start");
+
+                    b.ToTable("meter_readings", t =>
+                        {
+                            t.HasCheckConstraint("ck_meter_readings_energy_kwh", "energy_kwh >= 0");
+
+                            t.HasCheckConstraint("ck_meter_readings_reading_start", "reading_start = date_trunc('minute', reading_start)");
+
+                            t.HasCheckConstraint("ck_meter_readings_sequence", "sequence >= 0");
                         });
                 });
 
@@ -316,6 +367,19 @@ namespace GridWise.Api.Migrations
                         .HasConstraintName("fk_meters_buildings_organization_id_building_id");
 
                     b.Navigation("Building");
+                });
+
+            modelBuilder.Entity("GridWise.Api.Telemetry.MeterReading", b =>
+                {
+                    b.HasOne("GridWise.Api.Sites.Meter", "Meter")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "MeterId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_meter_readings_meters_organization_id_meter_id");
+
+                    b.Navigation("Meter");
                 });
 
             modelBuilder.Entity("GridWise.Api.Identity.AppUser", b =>
