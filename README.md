@@ -98,7 +98,7 @@ gridwise/
 | Week | Focus | Status |
 |---|---|---|
 | Week 1 | **Foundation** — Scaffold Vue and ASP.NET Core apps with Compose stack, add sample meter data generator with tests | ✅ Done |
-| Week 2 | **Meters & ingestion** — Add identity and organizations, add buildings and meters, add TimescaleDB hypertable schema, add telemetry ingestion endpoint, add building and meter screens | Planned |
+| Week 2 | **Meters & ingestion** — Add identity and organizations, add buildings and meters, add TimescaleDB hypertable schema, add telemetry ingestion endpoint, add building and meter screens | ✅ Done |
 | Week 3 | **Data quality & live dashboard** — Deduplicate readings, flag gaps and spikes, add SignalR hub, add live dashboard | Planned |
 | Week 4 | **Tariffs & costs** — Add time-of-use tariff model, calculate energy costs with tests, add cost report | Planned |
 | Week 5 | **Anomalies & alerts** — Compute baselines in the worker, add deterministic anomaly rules, raise alerts from anomalies, add acknowledgment workflow, add alerts inbox | Planned |
@@ -109,7 +109,8 @@ gridwise/
 
 - [Architecture decisions](docs/adr/)
 - [Week 1 acceptance cases](docs/acceptance/week-01-foundation-and-meter-fixtures.md)
-- [Progress notes](docs/progress/week-01.md)
+- [Progress notes](docs/progress/): [week 1](docs/progress/week-01.md), [week 2](docs/progress/week-02.md)
+- [API: identity, buildings, meters and errors](services/api/README.md)
 - [Synthetic meter data generator](packages/fixtures/README.md)
 
 ## Getting started
