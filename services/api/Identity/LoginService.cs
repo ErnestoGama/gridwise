@@ -23,16 +23,17 @@ public sealed class LoginService(GridWiseDbContext db, IPasswordHasher<AppUser> 
     public const int MaxFailedAttempts = 5;
     public static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
 
-    // Verified against when the email is unknown so both paths cost one hash check.
-    private static readonly Lazy<string> DummyHash = new(() =>
-        new PasswordHasher<AppUser>().HashPassword(Placeholder, Guid.NewGuid().ToString("N")));
-
+    // Declared before DummyHash: static fields are initialized in source order.
     private static readonly AppUser Placeholder = new()
     {
         Email = "placeholder@invalid",
         NormalizedEmail = "PLACEHOLDER@INVALID",
         DisplayName = "placeholder",
     };
+
+    // Verified against when the email is unknown so both paths cost one hash check.
+    private static readonly Lazy<string> DummyHash = new(() =>
+        new PasswordHasher<AppUser>().HashPassword(Placeholder, Guid.NewGuid().ToString("N")));
 
     public async Task<LoginResult> SignInAsync(string email, string password, CancellationToken ct)
     {

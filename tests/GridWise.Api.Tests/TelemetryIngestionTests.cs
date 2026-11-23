@@ -160,4 +160,54 @@ public sealed class TelemetryIngestionTests
 
         Assert.Equal(TelemetryIngestion.MaxReportedErrors, errors.Count);
     }
+
+    [Fact]
+    public void Fingerprint_ignores_offset_and_trailing_zeros()
+    {
+        var utc = Valid(0, 10, 0, 12.5m);
+        var sameInstant = utc with { ReadingStart = utc.ReadingStart.ToOffset(TimeSpan.FromHours(2)), EnergyKwh = 12.500m };
+
+        Assert.Equal(TelemetryIngestion.Fingerprint([utc]), TelemetryIngestion.Fingerprint([sameInstant]));
+        Assert.Matches("^[0-9a-f]{64}$", TelemetryIngestion.Fingerprint([utc]));
+    }
+
+    [Fact]
+    public void Fingerprint_changes_with_any_value_or_the_order()
+    {
+        ValidReading[] batch = [Valid(0, 10, 0, 1.5m), Valid(1, 11, 1, 1.6m)];
+        var baseline = TelemetryIngestion.Fingerprint(batch);
+
+        Assert.NotEqual(baseline, TelemetryIngestion.Fingerprint([batch[1], batch[0]]));
+        Assert.NotEqual(baseline, TelemetryIngestion.Fingerprint([batch[0] with { EnergyKwh = 1.501m }, batch[1]]));
+        Assert.NotEqual(baseline, TelemetryIngestion.Fingerprint([batch[0] with { Sequence = 12 }, batch[1]]));
+        Assert.NotEqual(baseline, TelemetryIngestion.Fingerprint([batch[0] with { MeterId = OtherMeter }, batch[1]]));
+        Assert.NotEqual(baseline, TelemetryIngestion.Fingerprint([batch[0]]));
+    }
+
+    [Fact]
+    public void Every_conflict_code_has_a_message()
+    {
+        foreach (var code in TelemetryIngestion.ConflictCodes)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(TelemetryIngestion.ConflictMessage(code)));
+        }
+        Assert.Throws<ArgumentOutOfRangeException>(() => TelemetryIngestion.ConflictMessage("unknown"));
+    }
+
+    [Theory]
+    [InlineData("gw-hh-2026-03-29:0042", true)]
+    [InlineData("A.b_c:d-1", true)]
+    [InlineData("", false)]
+    [InlineData("has space", false)]
+    [InlineData("trailing-newline\n", false)]
+    [InlineData("é", false)]
+    public void Idempotency_key_rule(string key, bool expected) =>
+        Assert.Equal(expected, IdempotencyKeys.IsValid(key));
+
+    [Fact]
+    public void Idempotency_keys_are_at_most_64_characters()
+    {
+        Assert.True(IdempotencyKeys.IsValid(new string('k', 64)));
+        Assert.False(IdempotencyKeys.IsValid(new string('k', 65)));
+    }
 }

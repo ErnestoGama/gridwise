@@ -1,3 +1,7 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+
 namespace GridWise.Api.Telemetry;
 
 /// <summary>One reading as sent by a meter gateway. Every field is required.</summary>
@@ -13,7 +17,8 @@ public sealed record StoredReading(Guid MeterId, long Sequence, DateTimeOffset R
 
 public sealed record ReadingConflict(int Index, Guid MeterId, long Sequence, string Code, string Message);
 
-public sealed record TelemetryBatchResult(int Received, int Inserted, int Duplicates, IReadOnlyList<ReadingConflict> Conflicts);
+public sealed record TelemetryBatchResult(
+    Guid BatchId, int Received, int Inserted, int Duplicates, IReadOnlyList<ReadingConflict> Conflicts, DateTimeOffset ReceivedAt);
 
 public sealed record IngestionPlan(IReadOnlyList<ValidReading> Inserts, int Duplicates, IReadOnlyList<ReadingConflict> Conflicts);
 
@@ -37,6 +42,38 @@ public static class TelemetryIngestion
 
     public const string SequenceReused = "sequence_reused";
     public const string IntervalTaken = "interval_taken";
+
+    /// <summary>Every conflict code, as allowed by <c>ck_telemetry_batch_conflicts_code</c>.</summary>
+    public static readonly IReadOnlyList<string> ConflictCodes = [SequenceReused, IntervalTaken];
+
+    /// <summary>Human-readable text for a conflict code; stored conflicts keep only the code.</summary>
+    public static string ConflictMessage(string code) => code switch
+    {
+        SequenceReused => "This sequence was already received with a different start or energy.",
+        IntervalTaken => "This interval already has a reading with another sequence.",
+        _ => throw new ArgumentOutOfRangeException(nameof(code), code, "Unknown conflict code."),
+    };
+
+    /// <summary>
+    /// SHA-256 (lowercase hex) of the validated readings in batch order. Starts
+    /// are already UTC and energy is written without trailing zeros, so
+    /// <c>12.5</c> and <c>12.500</c>, or the same instant with another offset,
+    /// give the same fingerprint. Used to tell a retry from a different batch
+    /// sent under the same idempotency key.
+    /// </summary>
+    public static string Fingerprint(IReadOnlyList<ValidReading> readings)
+    {
+        var text = new StringBuilder(readings.Count * 80);
+        foreach (var r in readings)
+        {
+            text.Append(r.MeterId.ToString("D"))
+                .Append('|').Append(r.Sequence.ToString(CultureInfo.InvariantCulture))
+                .Append('|').Append(r.ReadingStart.UtcTicks.ToString(CultureInfo.InvariantCulture))
+                .Append('|').Append(r.EnergyKwh.ToString("0.###", CultureInfo.InvariantCulture))
+                .Append('\n');
+        }
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())));
+    }
 
     /// <summary>
     /// Checks every reading against the rules and against the caller's meters.
@@ -159,14 +196,14 @@ public static class TelemetryIngestion
                 else
                 {
                     conflicts.Add(new ReadingConflict(reading.Index, reading.MeterId, reading.Sequence, SequenceReused,
-                        "This sequence was already received with a different start or energy."));
+                        ConflictMessage(SequenceReused)));
                 }
                 continue;
             }
             if (byStart.ContainsKey((reading.MeterId, reading.ReadingStart)))
             {
                 conflicts.Add(new ReadingConflict(reading.Index, reading.MeterId, reading.Sequence, IntervalTaken,
-                    "This interval already has a reading with another sequence."));
+                    ConflictMessage(IntervalTaken)));
                 continue;
             }
 

@@ -2,6 +2,7 @@ using System.Text.Json;
 using GridWise.Api.Data;
 using GridWise.Api.Http;
 using GridWise.Api.Identity;
+using GridWise.Api.Realtime;
 using GridWise.Api.Seeding;
 using GridWise.Api.Sites;
 using GridWise.Api.Telemetry;
@@ -49,6 +50,13 @@ builder.Services
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddSignalR(options =>
+{
+    // Clients only send subscribe/unsubscribe calls with two IDs.
+    options.MaximumReceiveMessageSize = 4 * 1024;
+});
+builder.Services.AddSingleton<TelemetryNotifier>();
+
 builder.Services.AddHealthChecks()
     .AddNpgSql(postgres, name: "database", timeout: TimeSpan.FromSeconds(3))
     .AddRedis(redis, name: "redis", timeout: TimeSpan.FromSeconds(3));
@@ -78,6 +86,13 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 app.MapIdentityEndpoints();
 app.MapSiteEndpoints();
 app.MapTelemetryEndpoints();
+app.MapQualityFlagEndpoints();
+app.MapReadingEndpoints();
+app.MapHub<TelemetryHub>(TelemetryHub.Path, options =>
+{
+    // A connection outlives its HTTP request; close it when the session cookie expires.
+    options.CloseOnAuthenticationExpiration = true;
+});
 
 await app.RunAsync();
 return 0;

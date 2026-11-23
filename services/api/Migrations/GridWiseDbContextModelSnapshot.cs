@@ -323,6 +323,191 @@ namespace GridWise.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GridWise.Api.Telemetry.ReadingQualityFlag", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal?>("BaselineKwh")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)")
+                        .HasColumnName("baseline_kwh");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("IntervalEnd")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("interval_end");
+
+                    b.Property<DateTimeOffset>("IntervalStart")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("interval_start");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("MeterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("meter_id");
+
+                    b.Property<int?>("MissingIntervals")
+                        .HasColumnType("integer")
+                        .HasColumnName("missing_intervals");
+
+                    b.Property<decimal?>("ObservedKwh")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)")
+                        .HasColumnName("observed_kwh");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<int>("RuleVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("rule_version");
+
+                    b.Property<long?>("Sequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sequence");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_reading_quality_flags");
+
+                    b.HasIndex("OrganizationId", "MeterId", "IntervalStart")
+                        .HasDatabaseName("ix_reading_quality_flags_organization_meter_interval_start");
+
+                    b.HasIndex("MeterId", "IntervalStart", "Kind")
+                        .IsUnique()
+                        .HasDatabaseName("ux_reading_quality_flags_meter_start_kind");
+
+                    b.ToTable("reading_quality_flags", t =>
+                        {
+                            t.HasCheckConstraint("ck_reading_quality_flags_interval", "interval_end > interval_start");
+
+                            t.HasCheckConstraint("ck_reading_quality_flags_kind", "kind IN ('gap', 'spike')");
+
+                            t.HasCheckConstraint("ck_reading_quality_flags_rule_version", "rule_version > 0");
+
+                            t.HasCheckConstraint("ck_reading_quality_flags_shape", "(kind = 'gap' AND missing_intervals IS NOT NULL AND missing_intervals > 0 AND sequence IS NULL AND observed_kwh IS NULL AND baseline_kwh IS NULL) OR (kind = 'spike' AND missing_intervals IS NULL AND sequence IS NOT NULL AND sequence >= 0 AND observed_kwh IS NOT NULL AND observed_kwh >= 0 AND baseline_kwh IS NOT NULL AND baseline_kwh >= 0)");
+                        });
+                });
+
+            modelBuilder.Entity("GridWise.Api.Telemetry.TelemetryBatch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("ConflictCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("conflict_count");
+
+                    b.Property<int>("DuplicateCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("duplicate_count");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<int>("InsertedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("inserted_count");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("PayloadSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .HasColumnName("payload_sha256")
+                        .IsFixedLength();
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at");
+
+                    b.Property<int>("ReceivedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("received_count");
+
+                    b.Property<Guid?>("SubmittedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("submitted_by_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_telemetry_batches");
+
+                    b.HasIndex("SubmittedByUserId")
+                        .HasDatabaseName("ix_telemetry_batches_submitted_by_user_id");
+
+                    b.HasIndex("OrganizationId", "Id")
+                        .HasDatabaseName("ix_telemetry_batches_organization_id");
+
+                    b.HasIndex("OrganizationId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_telemetry_batches_organization_idempotency_key")
+                        .HasFilter("idempotency_key IS NOT NULL");
+
+                    b.ToTable("telemetry_batches", t =>
+                        {
+                            t.HasCheckConstraint("ck_telemetry_batches_counts", "received_count > 0 AND inserted_count >= 0 AND duplicate_count >= 0 AND conflict_count >= 0 AND inserted_count + duplicate_count + conflict_count = received_count");
+
+                            t.HasCheckConstraint("ck_telemetry_batches_idempotency_key", "idempotency_key IS NULL OR idempotency_key ~ '^[A-Za-z0-9._:-]{1,64}$'");
+
+                            t.HasCheckConstraint("ck_telemetry_batches_payload_sha256", "payload_sha256 ~ '^[0-9a-f]{64}$'");
+                        });
+                });
+
+            modelBuilder.Entity("GridWise.Api.Telemetry.TelemetryBatchConflict", b =>
+                {
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("batch_id");
+
+                    b.Property<int>("ReadingIndex")
+                        .HasColumnType("integer")
+                        .HasColumnName("reading_index");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("code");
+
+                    b.Property<Guid>("MeterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("meter_id");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sequence");
+
+                    b.HasKey("BatchId", "ReadingIndex")
+                        .HasName("pk_telemetry_batch_conflicts");
+
+                    b.ToTable("telemetry_batch_conflicts", t =>
+                        {
+                            t.HasCheckConstraint("ck_telemetry_batch_conflicts_code", "code IN ('sequence_reused', 'interval_taken')");
+
+                            t.HasCheckConstraint("ck_telemetry_batch_conflicts_reading_index", "reading_index >= 0 AND reading_index < 1000");
+                        });
+                });
+
             modelBuilder.Entity("GridWise.Api.Identity.Membership", b =>
                 {
                     b.HasOne("GridWise.Api.Identity.Organization", "Organization")
@@ -382,6 +567,49 @@ namespace GridWise.Api.Migrations
                     b.Navigation("Meter");
                 });
 
+            modelBuilder.Entity("GridWise.Api.Telemetry.ReadingQualityFlag", b =>
+                {
+                    b.HasOne("GridWise.Api.Sites.Meter", "Meter")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "MeterId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_reading_quality_flags_meters_organization_id_meter_id");
+
+                    b.Navigation("Meter");
+                });
+
+            modelBuilder.Entity("GridWise.Api.Telemetry.TelemetryBatch", b =>
+                {
+                    b.HasOne("GridWise.Api.Identity.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_telemetry_batches_organizations_organization_id");
+
+                    b.HasOne("GridWise.Api.Identity.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("SubmittedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_telemetry_batches_users_submitted_by_user_id");
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("GridWise.Api.Telemetry.TelemetryBatchConflict", b =>
+                {
+                    b.HasOne("GridWise.Api.Telemetry.TelemetryBatch", "Batch")
+                        .WithMany("Conflicts")
+                        .HasForeignKey("BatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_telemetry_batch_conflicts_telemetry_batches_batch_id");
+
+                    b.Navigation("Batch");
+                });
+
             modelBuilder.Entity("GridWise.Api.Identity.AppUser", b =>
                 {
                     b.Navigation("Memberships");
@@ -395,6 +623,11 @@ namespace GridWise.Api.Migrations
             modelBuilder.Entity("GridWise.Api.Sites.Building", b =>
                 {
                     b.Navigation("Meters");
+                });
+
+            modelBuilder.Entity("GridWise.Api.Telemetry.TelemetryBatch", b =>
+                {
+                    b.Navigation("Conflicts");
                 });
 #pragma warning restore 612, 618
         }

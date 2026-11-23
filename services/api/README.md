@@ -102,8 +102,10 @@ interval readings for any meters of the organization in the route:
 
 | Result | When |
 |---|---|
-| `200` `{ received, inserted, duplicates, conflicts[] }` | The batch was valid; new readings were stored |
-| `422 validation_failed` | Any reading is invalid; `fields` uses keys like `readings[3].energyKwh` (at most 50) and nothing is stored |
+| `200` `{ batchId, received, inserted, duplicates, conflicts[], receivedAt }` | The batch was valid; new readings were stored and the batch was recorded |
+| `200` + `Idempotent-Replayed: true` | Retry with an `Idempotency-Key` already used for the same readings; the original result is returned and nothing is stored |
+| `409 idempotency_key_reused` | The `Idempotency-Key` was already used for different readings |
+| `422 validation_failed` | Any reading is invalid; `fields` uses keys like `readings[3].energyKwh` (at most 50) and nothing is stored; a malformed key is reported as `idempotencyKey` |
 | `404` / `403` / `401` | Not a member / role below admin / not signed in |
 
 Rules:
@@ -125,7 +127,103 @@ Rules:
 - Concurrent batches for the same meter are serialized with a per-meter
   advisory lock inside the insert transaction, because a hypertable cannot
   have a unique `(meter_id, sequence)` constraint without the time column.
-- Only counts are logged, never reading values.
+- `Idempotency-Key` (optional header) is 1–64 letters, digits or `. _ : -`,
+  unique per organization. Readings are compared by a SHA-256 fingerprint of
+  the normalized readings, so the same instants with another offset or `12.50`
+  instead of `12.5` still count as the same batch.
+- Only counts and the batch ID are logged, never reading values or keys.
+
+### Batch history
+
+Every accepted batch is recorded with its counts and conflicts (analyst and
+above can read it):
+
+- `GET /v1/organizations/{organizationId}/telemetry/batches?limit=&cursor=` —
+  newest first, `{ items: [{ id, received, inserted, duplicates, conflicts,
+  hasIdempotencyKey, receivedAt }], nextCursor }`.
+- `GET /v1/organizations/{organizationId}/telemetry/batches/{batchId}` — counts,
+  `submittedByUserId` and `conflicts[]` (`index`, `meterId`, `sequence`,
+  `code`, `message`); `404` for a batch of another organization.
+
+### Quality flags
+
+Stored readings are checked for gaps and spikes (see
+[ADR 0002](../../docs/adr/0002-telemetry-deduplication-and-quality-flags.md)).
+Flags live in `reading_quality_flags` and never change a reading:
+
+- **Gap:** intervals with no reading between two stored readings, as one flag
+  from the first missing interval to the next reading (`missingIntervals`). A
+  gap is unknown energy, not zero. The time after a meter's last reading is
+  not a gap; the reading may still be on its way.
+- **Spike:** a reading at least 4× the median of the meter's readings in the
+  previous 24 hours and at least 1 kWh above it (`observedKwh`,
+  `baselineKwh`). At least 8 readings are needed for a baseline.
+
+Flags are recomputed inside the ingestion transaction for every batch that
+stores new readings, from the reading before the new ones to 24 hours after
+them. A late reading therefore shrinks or clears a gap and can change later
+spike baselines; an identical resend changes nothing.
+
+`GET /v1/organizations/{organizationId}/meters/{meterId}/quality-flags?kind=&from=&to=&limit=&cursor=`
+(every member) lists one meter's flags in time order: `{ items: [{ id, kind,
+intervalStart, intervalEnd, missingIntervals, sequence, observedKwh,
+baselineKwh, ruleVersion, flaggedAt, updatedAt }], nextCursor }`. `from`/`to`
+select flags overlapping the window and need an explicit offset
+(`2026-03-29T00:00:00Z`); `kind` is `gap` or `spike`. A meter of another
+organization is `404`.
+
+### Building readings
+
+`GET /v1/organizations/{organizationId}/buildings/{buildingId}/readings?from=&to=`
+(every member) is the dashboard's initial load: every meter of the building
+(by serial) with its readings in `[from, to)` and the quality flags that
+overlap the window:
+
+```json
+{ "buildingId": "…", "from": "…", "to": "…",
+  "meters": [{ "meterId": "…", "serial": "GW-HH-MAIN-01", "kind": "main", "intervalMinutes": 15,
+               "readings": [{ "sequence": 1, "readingStart": "…", "energyKwh": 1.5 }],
+               "qualityFlags": [{ "id": "…", "kind": "gap", "intervalStart": "…", "intervalEnd": "…", "missingIntervals": 4, … }] }] }
+```
+
+Readings have the same shape as in `ReadingsIngested` messages. Missing
+intervals are left out, not returned as zero. `from` and `to` are required,
+need an explicit offset and may be at most 48 hours apart (`422` otherwise).
+A building of another organization is `404`.
+
+## Realtime updates
+
+Dashboards follow live readings over SignalR at `/hubs/telemetry` (see
+[ADR 0003](../../docs/adr/0003-realtime-telemetry-updates.md)). The
+connection uses the session cookie; without one, negotiation answers `401`.
+It is closed when the session expires.
+
+A new connection receives nothing until it subscribes:
+
+| Hub method | Arguments | Result |
+|---|---|---|
+| `SubscribeBuilding` | `organizationId`, `buildingId` | `{ organizationId, buildingId }` |
+| `UnsubscribeBuilding` | `organizationId`, `buildingId` | — |
+
+Every member of the organization can subscribe to its buildings. A building
+of another organization, or an organization the user is not a member of,
+fails with the hub error `not_found` in both cases. A connection can follow at
+most 20 buildings (`too_many_subscriptions`); repeating a subscription does
+not count twice.
+
+After a batch commits with new readings, each followed building gets one
+`ReadingsIngested` message:
+
+```json
+{ "organizationId": "…", "buildingId": "…", "batchId": "…", "receivedAt": "…", "qualityFlagsChanged": true,
+  "meters": [{ "meterId": "…", "readings": [{ "sequence": 1, "readingStart": "2026-04-01T00:00:00+00:00", "energyKwh": 1.5 }] }] }
+```
+
+Duplicates, conflicts, keyed replays and rejected batches send nothing. When
+`qualityFlagsChanged` is true, reload the flags of the listed meters (the web
+dashboard reloads the building readings). A push
+that fails is logged with the batch and building IDs and does not fail the
+batch; the readings are stored either way.
 
 ## Errors
 
@@ -167,3 +265,11 @@ no row and is treated as unknown, never as zero. The migration needs the
 `timescaledb` extension (created by the Compose init script). Its `Down` drops
 the table with all stored readings, so dump `meter_readings` before rolling back
 a database that holds real data.
+
+Migration `AddTelemetryBatches` creates `telemetry_batches` (counts with a
+check that inserted + duplicates + conflicts = received, optional idempotency
+key with a partial unique index per organization, SHA-256 payload
+fingerprint, submitting user set to null if the user is removed) and
+`telemetry_batch_conflicts` (primary key `(batch_id, reading_index)`, code
+check, cascades with its batch). `Down` drops both tables; readings are not
+touched.
