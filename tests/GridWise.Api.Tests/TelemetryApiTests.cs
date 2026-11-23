@@ -197,4 +197,170 @@ public sealed class TelemetryApiTests(ApiFactory factory) : IClassFixture<ApiFac
         Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
         Assert.Equal(0, await StoredCountAsync(meter, 600, 600));
     }
+
+    private static Task<HttpResponseMessage> PostKeyedBatchAsync(HttpClient client, string organizationId, string key, params object[] readings)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/v1/organizations/{organizationId}/telemetry/batches")
+        {
+            Content = JsonContent.Create(new { readings }),
+        };
+        request.Headers.Add("Idempotency-Key", key);
+        return client.SendAsync(request);
+    }
+
+    private async Task<int> BatchCountAsync(string organizationId)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GridWiseDbContext>();
+        return await db.TelemetryBatches.CountAsync(b => b.OrganizationId == Guid.Parse(organizationId));
+    }
+
+    [Fact]
+    public async Task Each_batch_is_recorded_with_its_conflicts_for_analysts_to_review()
+    {
+        var (admin, orgs) = await AdminAsync();
+        var meter = await MeterIdAsync(admin, orgs["harbor-demo"], "GW-HH-HVAC-01");
+        await PostBatchAsync(admin, orgs["harbor-demo"], Reading(meter, 700, 20, 3m));
+
+        var response = await PostBatchAsync(admin, orgs["harbor-demo"],
+            Reading(meter, 700, 20, 3m),
+            Reading(meter, 700, 21, 3m),
+            Reading(meter, 701, 22, 3.1m));
+        var batchId = (await BodyOf(response)).GetProperty("batchId").GetGuid();
+
+        var analyst = await SignedInClientAsync("analyst@gridwise.test");
+        var detail = await analyst.GetAsync($"/v1/organizations/{orgs["harbor-demo"]}/telemetry/batches/{batchId}");
+
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        var body = await BodyOf(detail);
+        Assert.Equal(3, body.GetProperty("received").GetInt32());
+        Assert.Equal(1, body.GetProperty("inserted").GetInt32());
+        Assert.Equal(1, body.GetProperty("duplicates").GetInt32());
+        Assert.False(body.GetProperty("hasIdempotencyKey").GetBoolean());
+        var conflict = Assert.Single(body.GetProperty("conflicts").EnumerateArray());
+        Assert.Equal(1, conflict.GetProperty("index").GetInt32());
+        Assert.Equal("sequence_reused", conflict.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrEmpty(conflict.GetProperty("message").GetString()));
+
+        var list = await analyst.GetFromJsonAsync<JsonElement>($"/v1/organizations/{orgs["harbor-demo"]}/telemetry/batches?limit=1");
+        Assert.Equal(batchId, Assert.Single(list.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task Batch_history_is_paged_newest_first()
+    {
+        var (admin, orgs) = await AdminAsync();
+        var meter = await MeterIdAsync(admin, orgs["lantern-estates"], "GW-LH-MAIN-01");
+        var ids = new List<Guid>();
+        for (var i = 0; i < 3; i++)
+        {
+            var response = await PostBatchAsync(admin, orgs["lantern-estates"], Reading(meter, 800 + i, 30 + i, 1m));
+            ids.Add((await BodyOf(response)).GetProperty("batchId").GetGuid());
+        }
+
+        var url = $"/v1/organizations/{orgs["lantern-estates"]}/telemetry/batches?limit=2";
+        var first = await admin.GetFromJsonAsync<JsonElement>(url);
+        var cursor = first.GetProperty("nextCursor").GetString();
+        var second = await admin.GetFromJsonAsync<JsonElement>($"{url}&cursor={cursor}");
+
+        var seen = first.GetProperty("items").EnumerateArray()
+            .Concat(second.GetProperty("items").EnumerateArray())
+            .Select(b => b.GetProperty("id").GetGuid())
+            .ToList();
+        Assert.Equal(seen.Distinct().Count(), seen.Count);
+        Assert.Equal(ids.AsEnumerable().Reverse(), seen.Take(3));
+
+        var badCursor = await admin.GetAsync($"{url}&cursor=bm90LWEtZ3VpZA");
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, badCursor.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_keyed_retry_returns_the_original_result_without_ingesting_again()
+    {
+        var (admin, orgs) = await AdminAsync();
+        var meter = await MeterIdAsync(admin, orgs["harbor-demo"], "GW-QW-MAIN-01");
+        object[] batch = [Reading(meter, 900, 40, 5.5m), Reading(meter, 901, 41, 5.25m)];
+
+        var first = await PostKeyedBatchAsync(admin, orgs["harbor-demo"], "gw-hh-2026-03-29:900", batch);
+        var batches = await BatchCountAsync(orgs["harbor-demo"]);
+        var retry = await PostKeyedBatchAsync(admin, orgs["harbor-demo"], "gw-hh-2026-03-29:900", batch);
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        Assert.False(first.Headers.Contains("Idempotent-Replayed"));
+        Assert.Equal("true", Assert.Single(retry.Headers.GetValues("Idempotent-Replayed")));
+
+        var firstBody = await BodyOf(first);
+        var retryBody = await BodyOf(retry);
+        Assert.Equal(firstBody.GetProperty("batchId").GetGuid(), retryBody.GetProperty("batchId").GetGuid());
+        Assert.Equal(2, retryBody.GetProperty("inserted").GetInt32());
+        Assert.Equal(0, retryBody.GetProperty("duplicates").GetInt32());
+        Assert.Equal(batches, await BatchCountAsync(orgs["harbor-demo"]));
+        Assert.Equal(2, await StoredCountAsync(meter, 900, 901));
+    }
+
+    [Fact]
+    public async Task A_key_reused_for_different_readings_gets_409_and_stores_nothing()
+    {
+        var (admin, orgs) = await AdminAsync();
+        var meter = await MeterIdAsync(admin, orgs["harbor-demo"], "GW-QW-HVAC-01");
+        await PostKeyedBatchAsync(admin, orgs["harbor-demo"], "reused-key", Reading(meter, 1000, 50, 1m));
+
+        var response = await PostKeyedBatchAsync(admin, orgs["harbor-demo"], "reused-key", Reading(meter, 1001, 51, 1m));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("idempotency_key_reused", (await BodyOf(response)).GetProperty("error").GetProperty("code").GetString());
+        Assert.Equal(0, await StoredCountAsync(meter, 1001, 1001));
+    }
+
+    [Fact]
+    public async Task The_same_key_in_another_organization_is_independent()
+    {
+        var (admin, orgs) = await AdminAsync();
+        var harborMeter = await MeterIdAsync(admin, orgs["harbor-demo"], "GW-HH-MAIN-01");
+        var lanternMeter = await MeterIdAsync(admin, orgs["lantern-estates"], "GW-LH-MAIN-01");
+
+        var harbor = await PostKeyedBatchAsync(admin, orgs["harbor-demo"], "shared-key", Reading(harborMeter, 1100, 60, 1m));
+        var lantern = await PostKeyedBatchAsync(admin, orgs["lantern-estates"], "shared-key", Reading(lanternMeter, 1100, 60, 1m));
+
+        Assert.Equal(HttpStatusCode.OK, harbor.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, lantern.StatusCode);
+        Assert.False(lantern.Headers.Contains("Idempotent-Replayed"));
+        Assert.Equal(1, (await BodyOf(lantern)).GetProperty("inserted").GetInt32());
+    }
+
+    [Theory]
+    [InlineData("has space")]
+    [InlineData("bad/slash")]
+    [InlineData("0123456789012345678901234567890123456789012345678901234567890123x")]
+    public async Task Malformed_idempotency_keys_get_422(string key)
+    {
+        var (admin, orgs) = await AdminAsync();
+        var meter = await MeterIdAsync(admin, orgs["harbor-demo"], "GW-HH-MAIN-01");
+
+        var response = await PostKeyedBatchAsync(admin, orgs["harbor-demo"], key, Reading(meter, 1200, 70, 1m));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.True((await BodyOf(response)).GetProperty("error").GetProperty("fields").TryGetProperty("idempotencyKey", out _));
+        Assert.Equal(0, await StoredCountAsync(meter, 1200, 1200));
+    }
+
+    [Fact]
+    public async Task Batch_history_needs_analyst_and_stays_inside_the_organization()
+    {
+        var (admin, orgs) = await AdminAsync();
+        var lanternMeter = await MeterIdAsync(admin, orgs["lantern-estates"], "GW-LH-MAIN-01");
+        var lanternBatch = (await BodyOf(await PostBatchAsync(admin, orgs["lantern-estates"], Reading(lanternMeter, 1300, 80, 1m))))
+            .GetProperty("batchId").GetGuid();
+        var operatorClient = await SignedInClientAsync("operator@gridwise.test");
+        var analyst = await SignedInClientAsync("analyst@gridwise.test");
+
+        var operatorList = await operatorClient.GetAsync($"/v1/organizations/{orgs["harbor-demo"]}/telemetry/batches");
+        var otherOrgList = await analyst.GetAsync($"/v1/organizations/{orgs["lantern-estates"]}/telemetry/batches");
+        var crossTenantDetail = await admin.GetAsync($"/v1/organizations/{orgs["harbor-demo"]}/telemetry/batches/{lanternBatch}");
+
+        Assert.Equal(HttpStatusCode.Forbidden, operatorList.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, otherOrgList.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, crossTenantDetail.StatusCode);
+    }
 }

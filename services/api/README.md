@@ -102,8 +102,10 @@ interval readings for any meters of the organization in the route:
 
 | Result | When |
 |---|---|
-| `200` `{ received, inserted, duplicates, conflicts[] }` | The batch was valid; new readings were stored |
-| `422 validation_failed` | Any reading is invalid; `fields` uses keys like `readings[3].energyKwh` (at most 50) and nothing is stored |
+| `200` `{ batchId, received, inserted, duplicates, conflicts[], receivedAt }` | The batch was valid; new readings were stored and the batch was recorded |
+| `200` + `Idempotent-Replayed: true` | Retry with an `Idempotency-Key` already used for the same readings; the original result is returned and nothing is stored |
+| `409 idempotency_key_reused` | The `Idempotency-Key` was already used for different readings |
+| `422 validation_failed` | Any reading is invalid; `fields` uses keys like `readings[3].energyKwh` (at most 50) and nothing is stored; a malformed key is reported as `idempotencyKey` |
 | `404` / `403` / `401` | Not a member / role below admin / not signed in |
 
 Rules:
@@ -125,7 +127,23 @@ Rules:
 - Concurrent batches for the same meter are serialized with a per-meter
   advisory lock inside the insert transaction, because a hypertable cannot
   have a unique `(meter_id, sequence)` constraint without the time column.
-- Only counts are logged, never reading values.
+- `Idempotency-Key` (optional header) is 1–64 letters, digits or `. _ : -`,
+  unique per organization. Readings are compared by a SHA-256 fingerprint of
+  the normalized readings, so the same instants with another offset or `12.50`
+  instead of `12.5` still count as the same batch.
+- Only counts and the batch ID are logged, never reading values or keys.
+
+### Batch history
+
+Every accepted batch is recorded with its counts and conflicts (analyst and
+above can read it):
+
+- `GET /v1/organizations/{organizationId}/telemetry/batches?limit=&cursor=` —
+  newest first, `{ items: [{ id, received, inserted, duplicates, conflicts,
+  hasIdempotencyKey, receivedAt }], nextCursor }`.
+- `GET /v1/organizations/{organizationId}/telemetry/batches/{batchId}` — counts,
+  `submittedByUserId` and `conflicts[]` (`index`, `meterId`, `sequence`,
+  `code`, `message`); `404` for a batch of another organization.
 
 ## Errors
 
@@ -167,3 +185,11 @@ no row and is treated as unknown, never as zero. The migration needs the
 `timescaledb` extension (created by the Compose init script). Its `Down` drops
 the table with all stored readings, so dump `meter_readings` before rolling back
 a database that holds real data.
+
+Migration `AddTelemetryBatches` creates `telemetry_batches` (counts with a
+check that inserted + duplicates + conflicts = received, optional idempotency
+key with a partial unique index per organization, SHA-256 payload
+fingerprint, submitting user set to null if the user is removed) and
+`telemetry_batch_conflicts` (primary key `(batch_id, reading_index)`, code
+check, cascades with its batch). `Down` drops both tables; readings are not
+touched.

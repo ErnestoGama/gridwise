@@ -86,6 +86,59 @@ public sealed class TelemetrySchemaTests
         Assert.InRange(dropTable, 0, dropKey - 1);
     }
 
+    [Fact]
+    public void Batches_have_a_per_organization_idempotency_key_and_conflicts_cascade_with_their_batch()
+    {
+        using var db = NpgsqlContext();
+        var batch = db.Model.FindEntityType(typeof(TelemetryBatch))!;
+        var conflict = db.Model.FindEntityType(typeof(TelemetryBatchConflict))!;
+
+        var keyIndex = batch.GetIndexes().Single(i => i.GetDatabaseName() == "ux_telemetry_batches_organization_idempotency_key");
+        Assert.True(keyIndex.IsUnique);
+        Assert.Equal("idempotency_key IS NOT NULL", keyIndex.GetFilter());
+        Assert.Equal(
+            new[] { nameof(TelemetryBatch.OrganizationId), nameof(TelemetryBatch.IdempotencyKey) },
+            keyIndex.Properties.Select(p => p.Name));
+
+        var submittedBy = batch.GetForeignKeys().Single(fk => fk.Properties.Single().Name == nameof(TelemetryBatch.SubmittedByUserId));
+        Assert.Equal(DeleteBehavior.SetNull, submittedBy.DeleteBehavior);
+
+        Assert.Equal(
+            new[] { nameof(TelemetryBatchConflict.BatchId), nameof(TelemetryBatchConflict.ReadingIndex) },
+            conflict.FindPrimaryKey()!.Properties.Select(p => p.Name));
+        Assert.Equal(DeleteBehavior.Cascade, Assert.Single(conflict.GetForeignKeys()).DeleteBehavior);
+    }
+
+    [Fact]
+    public void Migration_check_constraints_match_the_model()
+    {
+        using var db = NpgsqlContext();
+        var up = new AddTelemetryBatches().UpOperations.ToList();
+        var checks = up.OfType<CreateTableOperation>()
+            .SelectMany(t => t.CheckConstraints)
+            .ToDictionary(c => c.Name, c => c.Sql);
+
+        foreach (var type in new[] { typeof(TelemetryBatch), typeof(TelemetryBatchConflict) })
+        {
+            foreach (var check in db.Model.FindEntityType(type)!.GetCheckConstraints())
+            {
+                Assert.Equal(check.Sql, checks[check.ModelName]);
+            }
+        }
+    }
+
+    [Fact]
+    public void Batch_rollback_drops_conflicts_before_batches_and_keeps_readings()
+    {
+        var down = new AddTelemetryBatches().DownOperations.ToList();
+
+        var conflicts = down.FindIndex(o => o is DropTableOperation { Name: "telemetry_batch_conflicts" });
+        var batches = down.FindIndex(o => o is DropTableOperation { Name: "telemetry_batches" });
+
+        Assert.InRange(conflicts, 0, batches - 1);
+        Assert.DoesNotContain(down, o => o is DropTableOperation { Name: "meter_readings" });
+    }
+
     private static GridWiseDbContext NpgsqlContext() =>
         new(new DbContextOptionsBuilder<GridWiseDbContext>().UseNpgsql("Host=localhost;Database=unused").Options,
             TimeProvider.System);
