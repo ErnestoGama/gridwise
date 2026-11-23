@@ -149,8 +149,8 @@ public static class QualityFlagEndpoints
         {
             errors["kind"] = [$"Kind must be one of: {string.Join(", ", ReadingQuality.Kinds)}."];
         }
-        var fromUtc = ReadInstant(from, "from", errors);
-        var toUtc = ReadInstant(to, "to", errors);
+        var fromUtc = Instants.Read(from, "from", errors);
+        var toUtc = Instants.Read(to, "to", errors);
         if (fromUtc is not null && toUtc is not null && toUtc <= fromUtc)
         {
             errors["to"] = ["To must be after from."];
@@ -205,28 +205,6 @@ public static class QualityFlagEndpoints
         return Results.Ok(Paging.Build(rows, size,
             f => $"{f.IntervalStart.UtcTicks.ToString(CultureInfo.InvariantCulture)}:{f.Kind}"));
     }
-
-    private static DateTimeOffset? ReadInstant(string? value, string field, Dictionary<string, string[]> errors)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return null;
-        }
-        // An explicit offset is required: a bare local time would depend on the server's zone.
-        if (DateTimeOffset.TryParseExact(value, ["yyyy-MM-dd'T'HH:mm:ssK", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK"],
-                CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
-            && HasExplicitOffset(value))
-        {
-            return parsed.ToUniversalTime();
-        }
-        errors[field] = ["Use an ISO 8601 date and time with an offset, e.g. 2026-03-29T00:00:00Z."];
-        return null;
-    }
-
-    /// <summary>Ends in <c>Z</c> or <c>±hh:mm</c>.</summary>
-    private static bool HasExplicitOffset(string value) =>
-        value.EndsWith('Z')
-        || (value.Length > 6 && (value[^6] == '+' || value[^6] == '-') && value[^3] == ':');
 
     private static (DateTimeOffset Start, string Kind)? ReadCursor(string value)
     {

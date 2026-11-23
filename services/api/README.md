@@ -172,6 +172,25 @@ select flags overlapping the window and need an explicit offset
 (`2026-03-29T00:00:00Z`); `kind` is `gap` or `spike`. A meter of another
 organization is `404`.
 
+### Building readings
+
+`GET /v1/organizations/{organizationId}/buildings/{buildingId}/readings?from=&to=`
+(every member) is the dashboard's initial load: every meter of the building
+(by serial) with its readings in `[from, to)` and the quality flags that
+overlap the window:
+
+```json
+{ "buildingId": "…", "from": "…", "to": "…",
+  "meters": [{ "meterId": "…", "serial": "GW-HH-MAIN-01", "kind": "main", "intervalMinutes": 15,
+               "readings": [{ "sequence": 1, "readingStart": "…", "energyKwh": 1.5 }],
+               "qualityFlags": [{ "id": "…", "kind": "gap", "intervalStart": "…", "intervalEnd": "…", "missingIntervals": 4, … }] }] }
+```
+
+Readings have the same shape as in `ReadingsIngested` messages. Missing
+intervals are left out, not returned as zero. `from` and `to` are required,
+need an explicit offset and may be at most 48 hours apart (`422` otherwise).
+A building of another organization is `404`.
+
 ## Realtime updates
 
 Dashboards follow live readings over SignalR at `/hubs/telemetry` (see
@@ -201,7 +220,8 @@ After a batch commits with new readings, each followed building gets one
 ```
 
 Duplicates, conflicts, keyed replays and rejected batches send nothing. When
-`qualityFlagsChanged` is true, reload the flags of the listed meters. A push
+`qualityFlagsChanged` is true, reload the flags of the listed meters (the web
+dashboard reloads the building readings). A push
 that fails is logged with the batch and building IDs and does not fail the
 batch; the readings are stored either way.
 

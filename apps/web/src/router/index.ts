@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import BuildingDetailView from '@/views/BuildingDetailView.vue'
 import BuildingsView from '@/views/BuildingsView.vue'
+import LiveDashboardView from '@/views/LiveDashboardView.vue'
 import LoginView from '@/views/LoginView.vue'
 import StatusView from '@/views/StatusView.vue'
 
@@ -28,6 +29,12 @@ const router = createRouter({
       path: '/organizations/:organizationId/buildings/:buildingId',
       name: 'building',
       component: BuildingDetailView,
+      props: true,
+    },
+    {
+      path: '/organizations/:organizationId/buildings/:buildingId/live',
+      name: 'building-live',
+      component: LiveDashboardView,
       props: true,
     },
     { path: '/:pathMatch(.*)*', redirect: { name: 'home' } },

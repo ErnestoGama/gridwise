@@ -108,9 +108,9 @@ gridwise/
 ## Documentation
 
 - [Architecture decisions](docs/adr/)
-- [Week 1 acceptance cases](docs/acceptance/week-01-foundation-and-meter-fixtures.md)
-- [Progress notes](docs/progress/): [week 1](docs/progress/week-01.md), [week 2](docs/progress/week-02.md)
-- [API: identity, buildings, meters and errors](services/api/README.md)
+- Acceptance cases: [week 1](docs/acceptance/week-01-foundation-and-meter-fixtures.md), [week 3](docs/acceptance/week-03-data-quality-and-live-dashboard.md)
+- [Progress notes](docs/progress/): [week 1](docs/progress/week-01.md), [week 2](docs/progress/week-02.md), [week 3](docs/progress/week-03.md)
+- [API: identity, buildings, meters, telemetry, quality flags, realtime and errors](services/api/README.md)
 - [Synthetic meter data generator](packages/fixtures/README.md)
 
 ## Getting started

@@ -111,6 +111,9 @@ watch(
 
     <template v-else>
       <h1 id="building-heading">{{ state.building.name }}</h1>
+      <p>
+        <RouterLink :to="{ name: 'building-live', params: { organizationId, buildingId } }">Live dashboard →</RouterLink>
+      </p>
       <dl class="facts">
         <dt>Time zone</dt>
         <dd>{{ state.building.timeZone }} (now {{ localTime(state.building.timeZone) }})</dd>

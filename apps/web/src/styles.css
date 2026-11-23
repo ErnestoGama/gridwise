@@ -155,3 +155,98 @@ button.link {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+.dashboard-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.feed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.feed-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: #8c959f;
+}
+
+.feed-live .feed-dot {
+  background: #1a7f37;
+}
+
+.feed-reconnecting .feed-dot,
+.feed-connecting .feed-dot {
+  background: #bf8700;
+}
+
+.feed-offline,
+.feed-denied {
+  color: #a40e26;
+}
+
+.feed-offline .feed-dot,
+.feed-denied .feed-dot {
+  background: #cf222e;
+}
+
+.meter-panel {
+  margin-top: 1rem;
+}
+
+.meter-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.meter-head h2,
+.meter-head .latest {
+  margin: 0;
+}
+
+.latest {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.sparkline {
+  display: block;
+  width: 100%;
+  height: 6rem;
+  margin: 0.75rem 0;
+  background: #f6f8fa;
+}
+
+.sparkline polyline {
+  fill: none;
+  stroke: #12355b;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.sparkline circle {
+  fill: #12355b;
+}
+
+.flags {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.flag-gap::marker {
+  color: #8c959f;
+}
+
+.flag-spike::marker {
+  color: #cf222e;
+}

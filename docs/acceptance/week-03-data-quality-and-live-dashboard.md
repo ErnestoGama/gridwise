@@ -107,3 +107,19 @@ Given / When / Then.
 - When it subscribes to one more
 - Then it gets `too_many_subscriptions`; repeating an existing subscription
   does not count, and unsubscribing frees a place
+
+**AC-03.17 — Dashboard initial load**
+- Given readings with missing intervals for a building's meters
+- When a member opens the live dashboard
+- Then every meter shows its readings of the last 24 hours in the building's
+  time zone, missing intervals as breaks in the chart and as an unknown
+  count (never as zero), and its gap and spike flags; the API answers `422`
+  for a window without offsets or longer than 48 hours and `404` for another
+  organization's building
+
+**AC-03.18 — Connection states**
+- Given a member viewing the live dashboard
+- When the connection drops, comes back, or cannot be restored
+- Then the page says it is reconnecting, reloads the readings after it
+  re-subscribes (messages sent meanwhile are lost), or says the figures may
+  be out of date and offers to reconnect

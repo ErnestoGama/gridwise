@@ -87,6 +87,7 @@ app.MapIdentityEndpoints();
 app.MapSiteEndpoints();
 app.MapTelemetryEndpoints();
 app.MapQualityFlagEndpoints();
+app.MapReadingEndpoints();
 app.MapHub<TelemetryHub>(TelemetryHub.Path, options =>
 {
     // A connection outlives its HTTP request; close it when the session cookie expires.
