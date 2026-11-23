@@ -145,6 +145,33 @@ above can read it):
   `submittedByUserId` and `conflicts[]` (`index`, `meterId`, `sequence`,
   `code`, `message`); `404` for a batch of another organization.
 
+### Quality flags
+
+Stored readings are checked for gaps and spikes (see
+[ADR 0002](../../docs/adr/0002-telemetry-deduplication-and-quality-flags.md)).
+Flags live in `reading_quality_flags` and never change a reading:
+
+- **Gap:** intervals with no reading between two stored readings, as one flag
+  from the first missing interval to the next reading (`missingIntervals`). A
+  gap is unknown energy, not zero. The time after a meter's last reading is
+  not a gap; the reading may still be on its way.
+- **Spike:** a reading at least 4× the median of the meter's readings in the
+  previous 24 hours and at least 1 kWh above it (`observedKwh`,
+  `baselineKwh`). At least 8 readings are needed for a baseline.
+
+Flags are recomputed inside the ingestion transaction for every batch that
+stores new readings, from the reading before the new ones to 24 hours after
+them. A late reading therefore shrinks or clears a gap and can change later
+spike baselines; an identical resend changes nothing.
+
+`GET /v1/organizations/{organizationId}/meters/{meterId}/quality-flags?kind=&from=&to=&limit=&cursor=`
+(every member) lists one meter's flags in time order: `{ items: [{ id, kind,
+intervalStart, intervalEnd, missingIntervals, sequence, observedKwh,
+baselineKwh, ruleVersion, flaggedAt, updatedAt }], nextCursor }`. `from`/`to`
+select flags overlapping the window and need an explicit offset
+(`2026-03-29T00:00:00Z`); `kind` is `gap` or `spike`. A meter of another
+organization is `404`.
+
 ## Errors
 
 Every error uses one envelope; `requestId` matches the `X-Request-ID` response

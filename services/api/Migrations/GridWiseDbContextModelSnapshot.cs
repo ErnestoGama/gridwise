@@ -323,6 +323,86 @@ namespace GridWise.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GridWise.Api.Telemetry.ReadingQualityFlag", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal?>("BaselineKwh")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)")
+                        .HasColumnName("baseline_kwh");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("IntervalEnd")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("interval_end");
+
+                    b.Property<DateTimeOffset>("IntervalStart")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("interval_start");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("MeterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("meter_id");
+
+                    b.Property<int?>("MissingIntervals")
+                        .HasColumnType("integer")
+                        .HasColumnName("missing_intervals");
+
+                    b.Property<decimal?>("ObservedKwh")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)")
+                        .HasColumnName("observed_kwh");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<int>("RuleVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("rule_version");
+
+                    b.Property<long?>("Sequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sequence");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_reading_quality_flags");
+
+                    b.HasIndex("OrganizationId", "MeterId", "IntervalStart")
+                        .HasDatabaseName("ix_reading_quality_flags_organization_meter_interval_start");
+
+                    b.HasIndex("MeterId", "IntervalStart", "Kind")
+                        .IsUnique()
+                        .HasDatabaseName("ux_reading_quality_flags_meter_start_kind");
+
+                    b.ToTable("reading_quality_flags", t =>
+                        {
+                            t.HasCheckConstraint("ck_reading_quality_flags_interval", "interval_end > interval_start");
+
+                            t.HasCheckConstraint("ck_reading_quality_flags_kind", "kind IN ('gap', 'spike')");
+
+                            t.HasCheckConstraint("ck_reading_quality_flags_rule_version", "rule_version > 0");
+
+                            t.HasCheckConstraint("ck_reading_quality_flags_shape", "(kind = 'gap' AND missing_intervals IS NOT NULL AND missing_intervals > 0 AND sequence IS NULL AND observed_kwh IS NULL AND baseline_kwh IS NULL) OR (kind = 'spike' AND missing_intervals IS NULL AND sequence IS NOT NULL AND sequence >= 0 AND observed_kwh IS NOT NULL AND observed_kwh >= 0 AND baseline_kwh IS NOT NULL AND baseline_kwh >= 0)");
+                        });
+                });
+
             modelBuilder.Entity("GridWise.Api.Telemetry.TelemetryBatch", b =>
                 {
                     b.Property<Guid>("Id")
@@ -483,6 +563,19 @@ namespace GridWise.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_meter_readings_meters_organization_id_meter_id");
+
+                    b.Navigation("Meter");
+                });
+
+            modelBuilder.Entity("GridWise.Api.Telemetry.ReadingQualityFlag", b =>
+                {
+                    b.HasOne("GridWise.Api.Sites.Meter", "Meter")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "MeterId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_reading_quality_flags_meters_organization_id_meter_id");
 
                     b.Navigation("Meter");
                 });

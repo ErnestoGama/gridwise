@@ -16,6 +16,7 @@ public sealed class GridWiseDbContext(DbContextOptions<GridWiseDbContext> option
     public DbSet<MeterReading> MeterReadings => Set<MeterReading>();
     public DbSet<TelemetryBatch> TelemetryBatches => Set<TelemetryBatch>();
     public DbSet<TelemetryBatchConflict> TelemetryBatchConflicts => Set<TelemetryBatchConflict>();
+    public DbSet<ReadingQualityFlag> ReadingQualityFlags => Set<ReadingQualityFlag>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(GridWiseDbContext).Assembly);

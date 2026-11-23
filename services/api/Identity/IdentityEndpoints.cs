@@ -25,7 +25,8 @@ public static class IdentityEndpoints
         var v1 = routes.MapGroup("/v1");
 
         v1.MapPost("/auth/login", LoginAsync).AllowAnonymous();
-        v1.MapPost("/auth/logout", LogoutAsync).RequireAuthorization();
+        // Cast so the handler's IResult is written; as a RequestDelegate it would be discarded.
+        v1.MapPost("/auth/logout", (Delegate)LogoutAsync).RequireAuthorization();
         v1.MapGet("/me", GetMeAsync).RequireAuthorization();
         v1.MapGet("/organizations/{organizationId:guid}", GetOrganizationAsync).RequireAuthorization();
 

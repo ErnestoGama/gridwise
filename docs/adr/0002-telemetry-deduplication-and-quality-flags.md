@@ -46,13 +46,29 @@ changing stored readings.
    list batches (newest first, cursor pages) and open one with its conflicts.
    Keys, reading values and serials are never logged.
 
-### Quality flags (next step in this session)
+### Quality flags
 
-- Gaps and spikes are stored as rows in `reading_quality_flags`, never as
-  changes to `meter_readings`. A gap marks an interval as unknown; it is never
-  filled with zero.
-- Flags are computed by plain, deterministic rules over stored readings, so
-  the same data always gives the same flags.
+6. **Flags are rows, readings stay untouched.** Gaps and spikes are stored in
+   `reading_quality_flags` (meter, kind, interval start/end, rule version). A
+   gap marks intervals as unknown; it is never filled with zero. The table
+   references the meter, not individual readings, so `meter_readings` stays an
+   append-only hypertable.
+7. **Plain, deterministic rules** (rule version 1):
+   - *Gap:* one flag per run of missing intervals between two stored
+     readings. Nothing after the last reading is flagged, because the next
+     reading may simply not have arrived yet.
+   - *Spike:* a reading at least 4× the median of the meter's readings in the
+     previous 24 hours and at least 1 kWh above it. The median ignores the odd
+     outlier in the baseline; the 1 kWh floor keeps an idle meter at night
+     from flagging every small load. With fewer than 8 readings in the window
+     there is no baseline and no spike.
+8. **Recomputed on ingestion.** After a batch stores new readings, flags are
+   recomputed in the same transaction and under the same meter locks, from
+   the stored reading before the new ones to 24 hours after them (the spike
+   look-back). Unchanged flags keep their timestamps, changed ones are updated
+   and stale ones removed, so a late reading shrinks or clears its gap.
+9. **Every member can read flags.** Operators need to know which numbers are
+   unknown or suspicious; flags carry no more than the readings they describe.
 
 ## Consequences
 
@@ -65,3 +81,8 @@ changing stored readings.
   code) but not the rejected energy value.
 - The in-memory API tests cannot check advisory locks, partial unique indexes
   or check constraints; these need the TimescaleDB integration suite.
+- Ingestion does a few more queries per meter (previous reading, the window
+  around the new readings, the next reading, stored flags). A batch is capped
+  at 1,000 readings, so the work stays bounded.
+- Changing a threshold means bumping the rule version and recomputing flags;
+  until then old flags keep the version that produced them.

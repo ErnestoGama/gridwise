@@ -112,3 +112,57 @@ internal sealed class TelemetryBatchConflictConfiguration : IEntityTypeConfigura
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
+
+internal sealed class ReadingQualityFlagConfiguration : IEntityTypeConfiguration<ReadingQualityFlag>
+{
+    /// <summary>
+    /// Gaps carry a count only, spikes the reading and its baseline; never both.
+    /// Every spike column is tested with <c>IS NOT NULL</c> because a check that
+    /// evaluates to NULL passes.
+    /// </summary>
+    public const string ShapeCheck =
+        "(kind = 'gap' AND missing_intervals IS NOT NULL AND missing_intervals > 0 AND sequence IS NULL AND observed_kwh IS NULL AND baseline_kwh IS NULL) OR "
+        + "(kind = 'spike' AND missing_intervals IS NULL AND sequence IS NOT NULL AND sequence >= 0 "
+        + "AND observed_kwh IS NOT NULL AND observed_kwh >= 0 AND baseline_kwh IS NOT NULL AND baseline_kwh >= 0)";
+
+    public void Configure(EntityTypeBuilder<ReadingQualityFlag> b)
+    {
+        var kinds = string.Join(", ", ReadingQuality.Kinds.Select(k => $"'{k}'"));
+        b.ToTable("reading_quality_flags", t =>
+        {
+            t.HasCheckConstraint("ck_reading_quality_flags_kind", $"kind IN ({kinds})");
+            t.HasCheckConstraint("ck_reading_quality_flags_interval", "interval_end > interval_start");
+            t.HasCheckConstraint("ck_reading_quality_flags_shape", ShapeCheck);
+            t.HasCheckConstraint("ck_reading_quality_flags_rule_version", "rule_version > 0");
+        });
+        b.HasKey(x => x.Id).HasName("pk_reading_quality_flags");
+        b.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+        b.Property(x => x.OrganizationId).HasColumnName("organization_id");
+        b.Property(x => x.MeterId).HasColumnName("meter_id");
+        b.Property(x => x.Kind).HasColumnName("kind").HasMaxLength(16).IsRequired();
+        b.Property(x => x.IntervalStart).HasColumnName("interval_start");
+        b.Property(x => x.IntervalEnd).HasColumnName("interval_end");
+        b.Property(x => x.MissingIntervals).HasColumnName("missing_intervals");
+        b.Property(x => x.Sequence).HasColumnName("sequence");
+        b.Property(x => x.ObservedKwh).HasColumnName("observed_kwh").HasPrecision(12, 3);
+        b.Property(x => x.BaselineKwh).HasColumnName("baseline_kwh").HasPrecision(12, 3);
+        b.Property(x => x.RuleVersion).HasColumnName("rule_version");
+        b.Property(x => x.CreatedAt).HasColumnName("created_at");
+        b.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+
+        // One flag of a kind per meter and start.
+        b.HasIndex(x => new { x.MeterId, x.IntervalStart, x.Kind })
+            .IsUnique()
+            .HasDatabaseName("ux_reading_quality_flags_meter_start_kind");
+        // Tenant-scoped listing of a meter's flags; also serves the composite foreign key.
+        b.HasIndex(x => new { x.OrganizationId, x.MeterId, x.IntervalStart })
+            .HasDatabaseName("ix_reading_quality_flags_organization_meter_interval_start");
+
+        b.HasOne(x => x.Meter)
+            .WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.MeterId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
+            .HasConstraintName("fk_reading_quality_flags_meters_organization_id_meter_id")
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}

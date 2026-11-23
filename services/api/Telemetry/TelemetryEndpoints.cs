@@ -19,6 +19,7 @@ public sealed record TelemetryBatchDetail(
 /// meters of the organization in the route. Resending a batch is safe:
 /// identical readings are counted as duplicates and nothing is stored twice;
 /// with an <c>Idempotency-Key</c> the original result is returned as is.
+/// New readings refresh the meter's gap and spike flags in the same transaction.
 /// </summary>
 public static class TelemetryEndpoints
 {
@@ -157,9 +158,16 @@ public static class TelemetryEndpoints
         }));
         db.TelemetryBatches.Add(batch);
 
+        var flags = QualityFlagChanges.None;
         try
         {
             await db.SaveChangesAsync(ct);
+            // Flags read the readings just saved, still under the meter locks and in the same transaction.
+            if (plan.Inserts.Count > 0)
+            {
+                flags = await QualityFlagEndpoints.RefreshAsync(db, organizationId, plan.Inserts, meterIntervals, ct);
+                await db.SaveChangesAsync(ct);
+            }
             if (transaction is not null)
             {
                 await transaction.CommitAsync(ct);
@@ -175,8 +183,9 @@ public static class TelemetryEndpoints
             batch.Id, readings.Count, plan.Inserts.Count, plan.Duplicates, plan.Conflicts, receivedAt);
         // Counts only: reading values, meter serials and idempotency keys are not logged.
         loggers.CreateLogger("GridWise.Telemetry").LogInformation(
-            "Telemetry batch {BatchId} for organization {OrganizationId}: {Received} received, {Inserted} inserted, {Duplicates} duplicates, {Conflicts} conflicts",
-            batch.Id, organizationId, result.Received, result.Inserted, result.Duplicates, result.Conflicts.Count);
+            "Telemetry batch {BatchId} for organization {OrganizationId}: {Received} received, {Inserted} inserted, {Duplicates} duplicates, {Conflicts} conflicts; quality flags {FlagsRaised} raised, {FlagsUpdated} updated, {FlagsCleared} cleared",
+            batch.Id, organizationId, result.Received, result.Inserted, result.Duplicates, result.Conflicts.Count,
+            flags.Raised, flags.Updated, flags.Cleared);
         return Results.Ok(result);
     }
 

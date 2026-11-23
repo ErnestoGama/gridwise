@@ -78,6 +78,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 app.MapIdentityEndpoints();
 app.MapSiteEndpoints();
 app.MapTelemetryEndpoints();
+app.MapQualityFlagEndpoints();
 
 await app.RunAsync();
 return 0;

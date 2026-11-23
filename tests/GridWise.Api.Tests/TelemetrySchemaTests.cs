@@ -4,6 +4,8 @@ using GridWise.Api.Migrations;
 using GridWise.Api.Sites;
 using GridWise.Api.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GridWise.Api.Tests;
@@ -120,7 +122,7 @@ public sealed class TelemetrySchemaTests
 
         foreach (var type in new[] { typeof(TelemetryBatch), typeof(TelemetryBatchConflict) })
         {
-            foreach (var check in db.Model.FindEntityType(type)!.GetCheckConstraints())
+            foreach (var check in DesignModel(db).FindEntityType(type)!.GetCheckConstraints())
             {
                 Assert.Equal(check.Sql, checks[check.ModelName]);
             }
@@ -138,6 +140,50 @@ public sealed class TelemetrySchemaTests
         Assert.InRange(conflicts, 0, batches - 1);
         Assert.DoesNotContain(down, o => o is DropTableOperation { Name: "meter_readings" });
     }
+
+    [Fact]
+    public void Quality_flags_are_unique_per_meter_start_and_kind_and_tied_to_a_meter_of_the_same_organization()
+    {
+        using var db = NpgsqlContext();
+        var flag = db.Model.FindEntityType(typeof(ReadingQualityFlag))!;
+
+        Assert.Equal("reading_quality_flags", flag.GetTableName());
+        var unique = flag.GetIndexes().Single(i => i.GetDatabaseName() == "ux_reading_quality_flags_meter_start_kind");
+        Assert.True(unique.IsUnique);
+        Assert.Equal(
+            new[] { nameof(ReadingQualityFlag.MeterId), nameof(ReadingQualityFlag.IntervalStart), nameof(ReadingQualityFlag.Kind) },
+            unique.Properties.Select(p => p.Name));
+
+        var fk = Assert.Single(flag.GetForeignKeys());
+        Assert.Equal(typeof(Meter), fk.PrincipalEntityType.ClrType);
+        Assert.Equal(
+            new[] { nameof(ReadingQualityFlag.OrganizationId), nameof(ReadingQualityFlag.MeterId) },
+            fk.Properties.Select(p => p.Name));
+        Assert.Equal(DeleteBehavior.Restrict, fk.DeleteBehavior);
+        Assert.DoesNotContain(flag.GetForeignKeys(), k => k.PrincipalEntityType.ClrType == typeof(MeterReading));
+    }
+
+    [Fact]
+    public void Quality_flag_migration_matches_the_model_and_rollback_keeps_readings()
+    {
+        using var db = NpgsqlContext();
+        var migration = new AddReadingQualityFlags();
+        var table = Assert.Single(migration.UpOperations.OfType<CreateTableOperation>());
+        var checks = table.CheckConstraints.ToDictionary(c => c.Name, c => c.Sql);
+        var modelChecks = DesignModel(db).FindEntityType(typeof(ReadingQualityFlag))!.GetCheckConstraints().ToList();
+
+        Assert.Equal("reading_quality_flags", table.Name);
+        Assert.Equal(modelChecks.Count, checks.Count);
+        foreach (var check in modelChecks)
+        {
+            Assert.Equal(check.Sql, checks[check.ModelName]);
+        }
+        var drop = Assert.Single(migration.DownOperations);
+        Assert.Equal("reading_quality_flags", Assert.IsType<DropTableOperation>(drop).Name);
+    }
+
+    // Check constraints are only kept in the design-time model, not the read-optimized runtime model.
+    private static IModel DesignModel(GridWiseDbContext db) => db.GetService<IDesignTimeModel>().Model;
 
     private static GridWiseDbContext NpgsqlContext() =>
         new(new DbContextOptionsBuilder<GridWiseDbContext>().UseNpgsql("Host=localhost;Database=unused").Options,

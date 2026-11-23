@@ -55,18 +55,33 @@ Given / When / Then.
 ## Quality flags
 
 **AC-03.9 — Gaps are unknown, not zero**
-- Given a meter with a missing interval between two stored readings
-- When quality flags are computed
-- Then the missing interval is flagged as a gap and no zero reading is created
+- Given a meter with missing intervals between two stored readings
+- When the batch is ingested
+- Then one gap flag covers the missing intervals with their count, and no zero
+  reading is created
 
 **AC-03.10 — Spikes are flagged, readings unchanged**
-- Given a reading far above the meter's recent values
-- When quality flags are computed
-- Then the reading is flagged as a spike and the stored value is unchanged
+- Given at least 8 readings in the meter's previous 24 hours
+- When a reading is at least 4× their median and at least 1 kWh above it
+- Then the reading is flagged as a spike with its value and baseline, and the
+  stored value is unchanged
+
+**AC-03.11 — Late readings update flags**
+- Given a gap flag for a meter
+- When a later batch fills part of the gap, and then the rest
+- Then the gap flag first shrinks to the intervals still missing and is then
+  removed; resending a batch leaves flags and their timestamps unchanged
+
+**AC-03.12 — Reading flags**
+- Given flags for a meter
+- When any member lists `/meters/{id}/quality-flags` with a window, kind or
+  limit
+- Then flags come in time order with a cursor; a window without an offset or
+  an unknown kind is `422`, and a meter of another organization is `404`
 
 ## Live dashboard
 
-**AC-03.11 — Live updates**
+**AC-03.13 — Live updates**
 - Given a signed-in member viewing a building dashboard
 - When a batch for one of its meters is ingested
 - Then the dashboard updates without a page reload, and only members of the
