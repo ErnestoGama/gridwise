@@ -16,6 +16,8 @@ export default defineConfig({
     proxy: {
       '/health': apiTarget,
       '/v1': apiTarget,
+      // SignalR negotiates over HTTP, then upgrades to a WebSocket.
+      '/hubs': { target: apiTarget, ws: true },
     },
   },
 })

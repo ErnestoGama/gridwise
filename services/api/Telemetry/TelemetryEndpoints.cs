@@ -1,6 +1,7 @@
 using GridWise.Api.Data;
 using GridWise.Api.Http;
 using GridWise.Api.Identity;
+using GridWise.Api.Realtime;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -19,7 +20,8 @@ public sealed record TelemetryBatchDetail(
 /// meters of the organization in the route. Resending a batch is safe:
 /// identical readings are counted as duplicates and nothing is stored twice;
 /// with an <c>Idempotency-Key</c> the original result is returned as is.
-/// New readings refresh the meter's gap and spike flags in the same transaction.
+/// New readings refresh the meter's gap and spike flags in the same transaction
+/// and, once committed, are pushed to dashboards following their buildings.
 /// </summary>
 public static class TelemetryEndpoints
 {
@@ -39,7 +41,7 @@ public static class TelemetryEndpoints
     private static async Task<IResult> IngestBatchAsync(
         Guid organizationId, TelemetryBatchRequest request,
         HttpContext http, OrganizationAccess access, GridWiseDbContext db, TimeProvider clock,
-        ILoggerFactory loggers, CancellationToken ct)
+        TelemetryNotifier notifier, ILoggerFactory loggers, CancellationToken ct)
     {
         var (decision, caller) = await access.CheckAsync(http.User, organizationId, OrganizationRole.Admin, ct);
         if (decision != AccessDecision.Granted)
@@ -66,9 +68,11 @@ public static class TelemetryEndpoints
             .OfType<Guid>()
             .Distinct()
             .ToList();
-        var meterIntervals = await db.Meters
+        var meters = await db.Meters
             .Where(m => m.OrganizationId == organizationId && requestedMeters.Contains(m.Id))
-            .ToDictionaryAsync(m => m.Id, m => m.IntervalMinutes, ct);
+            .Select(m => new { m.Id, m.IntervalMinutes, m.BuildingId })
+            .ToListAsync(ct);
+        var meterIntervals = meters.ToDictionary(m => m.Id, m => m.IntervalMinutes);
 
         var (errors, readings) = TelemetryIngestion.Validate(request, meterIntervals, clock.GetUtcNow());
         if (errors.Count > 0)
@@ -186,6 +190,14 @@ public static class TelemetryEndpoints
             "Telemetry batch {BatchId} for organization {OrganizationId}: {Received} received, {Inserted} inserted, {Duplicates} duplicates, {Conflicts} conflicts; quality flags {FlagsRaised} raised, {FlagsUpdated} updated, {FlagsCleared} cleared",
             batch.Id, organizationId, result.Received, result.Inserted, result.Duplicates, result.Conflicts.Count,
             flags.Raised, flags.Updated, flags.Cleared);
+
+        if (plan.Inserts.Count > 0)
+        {
+            var meterBuildings = meters.ToDictionary(m => m.Id, m => m.BuildingId);
+            var flagsChanged = flags.Raised + flags.Updated + flags.Cleared > 0;
+            await notifier.PublishAsync(TelemetryNotifications.Build(
+                organizationId, batch.Id, receivedAt, plan.Inserts, meterBuildings, flagsChanged));
+        }
         return Results.Ok(result);
     }
 

@@ -86,3 +86,24 @@ Given / When / Then.
 - When a batch for one of its meters is ingested
 - Then the dashboard updates without a page reload, and only members of the
   organization receive the update
+
+**AC-03.14 — Realtime access**
+- Given the telemetry hub
+- When a client connects without a session, subscribes to a building of an
+  organization it does not belong to, or names another organization's
+  building under its own organization
+- Then the connection is refused with `401`, and both subscriptions fail with
+  the same `not_found` error and receive no updates
+
+**AC-03.15 — Only new readings are pushed**
+- Given a client subscribed to a building
+- When a batch for its meters stores new readings, then the same batch is
+  resent, then the client unsubscribes and another batch arrives
+- Then exactly one message arrives, for the first batch, with the stored
+  readings grouped by meter
+
+**AC-03.16 — Subscription cap**
+- Given a connection following 20 buildings
+- When it subscribes to one more
+- Then it gets `too_many_subscriptions`; repeating an existing subscription
+  does not count, and unsubscribing frees a place

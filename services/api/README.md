@@ -172,6 +172,39 @@ select flags overlapping the window and need an explicit offset
 (`2026-03-29T00:00:00Z`); `kind` is `gap` or `spike`. A meter of another
 organization is `404`.
 
+## Realtime updates
+
+Dashboards follow live readings over SignalR at `/hubs/telemetry` (see
+[ADR 0003](../../docs/adr/0003-realtime-telemetry-updates.md)). The
+connection uses the session cookie; without one, negotiation answers `401`.
+It is closed when the session expires.
+
+A new connection receives nothing until it subscribes:
+
+| Hub method | Arguments | Result |
+|---|---|---|
+| `SubscribeBuilding` | `organizationId`, `buildingId` | `{ organizationId, buildingId }` |
+| `UnsubscribeBuilding` | `organizationId`, `buildingId` | — |
+
+Every member of the organization can subscribe to its buildings. A building
+of another organization, or an organization the user is not a member of,
+fails with the hub error `not_found` in both cases. A connection can follow at
+most 20 buildings (`too_many_subscriptions`); repeating a subscription does
+not count twice.
+
+After a batch commits with new readings, each followed building gets one
+`ReadingsIngested` message:
+
+```json
+{ "organizationId": "…", "buildingId": "…", "batchId": "…", "receivedAt": "…", "qualityFlagsChanged": true,
+  "meters": [{ "meterId": "…", "readings": [{ "sequence": 1, "readingStart": "2026-04-01T00:00:00+00:00", "energyKwh": 1.5 }] }] }
+```
+
+Duplicates, conflicts, keyed replays and rejected batches send nothing. When
+`qualityFlagsChanged` is true, reload the flags of the listed meters. A push
+that fails is logged with the batch and building IDs and does not fail the
+batch; the readings are stored either way.
+
 ## Errors
 
 Every error uses one envelope; `requestId` matches the `X-Request-ID` response
